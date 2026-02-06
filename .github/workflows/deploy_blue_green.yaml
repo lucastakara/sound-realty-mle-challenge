@@ -1,0 +1,36 @@
+name: Deploy Blue-Green (NGINX)
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build blue and green images
+        run: |
+          docker build -f docker/api.Dockerfile -t sound-realty-api:blue .
+          docker build -f docker/api.Dockerfile -t sound-realty-api:green .
+
+      - name: Start blue/green stack
+        run: |
+          docker compose -f deploy/docker-compose.bluegreen.yml up -d
+
+      - name: Smoke test (through NGINX)
+        run: |
+          chmod +x deploy/scripts/*.sh
+          deploy/scripts/smoke_test.sh http://localhost:8000
+
+      - name: Switch traffic to green (example)
+        run: |
+          deploy/scripts/switch_blue_green.sh green
+          deploy/scripts/smoke_test.sh http://localhost:8000
+
+      - name: Status
+        run: |
+          deploy/scripts/status.sh
