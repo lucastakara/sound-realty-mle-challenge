@@ -1,5 +1,8 @@
 services:
   api_blue:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
     image: sound-realty-api:blue
     environment:
       MODEL_VERSION: baseline-v1
@@ -8,6 +11,9 @@ services:
       - "8000"
 
   api_green:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
     image: sound-realty-api:green
     environment:
       MODEL_VERSION: baseline-v1
@@ -23,7 +29,4 @@ services:
     ports:
       - "8000:80"
     volumes:
-      # This must contain ONLY upstream.conf + server.conf
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      # Optional: if you created deploy/nginx/nginx.conf, mount it too
-      # - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
