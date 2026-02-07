@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -176,6 +177,10 @@ def main() -> int:
 
 
 def test_run_live_unseen_examples():
+    # reset stack before running this integration test
+    subprocess.run(["make", "down"], check=False)   # don't fail if nothing is running
+    subprocess.run(["make", "up"], check=True)      # must exist in your Makefile
+
     # Make argparse read exactly what you want
     sys.argv = [
         "test_run_live_unseen_examples.py",
