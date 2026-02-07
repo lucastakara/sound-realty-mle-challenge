@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 import requests
+import sys
 
 
 DIVIDER = "#" * 70
@@ -173,5 +174,17 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
+
+def test_run_live_unseen_examples():
+    # Make argparse read exactly what you want
+    sys.argv = [
+        "test_run_live_unseen_examples.py",
+        "--api-url", "http://localhost:8000",
+        "--csv-path", "data/future_unseen_examples.csv",
+        "--sample-size", "20",
+        "--timeout", "10",
+        "--require-served-by",
+    ]
+    assert main() == 0
 if __name__ == "__main__":
     raise SystemExit(main())
