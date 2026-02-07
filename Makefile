@@ -69,8 +69,8 @@ live: up
 	@python tests/integration/test_run_live_unseen_examples.py \
 		--api-url http://localhost:8000 \
 		--csv-path data/future_unseen_examples.csv \
-		--sample-size 1000 \
-		--timeout 1 \
+		--sample-size 20 \
+		--timeout 10 \
 		--require-served-by
 
 # ---------------

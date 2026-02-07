@@ -3,13 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 import requests
-import sys
 
 
 DIVIDER = "#" * 70
@@ -78,6 +79,32 @@ def assert_api_is_healthy(api_url: str, timeout_seconds: float) -> str:
     return str(body.get("model_version", "unknown"))
 
 
+def wait_for_api_ok(api_url: str, timeout_s: float = 45.0) -> None:
+    """
+    Wait until GET /health returns {"status":"ok"} (helps avoid flaky CI race conditions
+    right after `make up`).
+    """
+    deadline = time.time() + timeout_s
+    last_err: Exception | None = None
+
+    while time.time() < deadline:
+        try:
+            r = requests.get(f"{api_url.rstrip('/')}/health", timeout=2)
+            if r.status_code == 200:
+                try:
+                    body = r.json()
+                except Exception:
+                    body = {}
+                if body.get("status") == "ok":
+                    return
+        except Exception as e:
+            last_err = e
+
+        time.sleep(0.5)
+
+    raise RuntimeError(f"API did not become healthy within {timeout_s}s. Last error: {last_err}")
+
+
 def load_samples(csv_path: Path, sample_size: int) -> List[Dict[str, Any]]:
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV not found at: {csv_path.resolve()}")
@@ -136,7 +163,6 @@ def main() -> int:
         if 200 <= status_code < 300:
             successes += 1
 
-            # Validate metadata if requested (blue/green mode)
             if cfg.require_served_by:
                 try:
                     data = json.loads(response_text)
@@ -175,21 +201,27 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
-
 def test_run_live_unseen_examples():
-    # reset stack before running this integration test
-    subprocess.run(["make", "down"], check=False)   # don't fail if nothing is running
-    subprocess.run(["make", "up"], check=True)      # must exist in your Makefile
+    subprocess.run(["make", "down"], check=False)  # don't fail if nothing is running
+    subprocess.run(["make", "up"], check=True)
 
-    # Make argparse read exactly what you want
+    # wait until the API is truly ready (avoids ConnectionResetError / 502 right after startup)
+    wait_for_api_ok("http://localhost:8000", timeout_s=60)
+
     sys.argv = [
         "test_run_live_unseen_examples.py",
-        "--api-url", "http://localhost:8000",
-        "--csv-path", "data/future_unseen_examples.csv",
-        "--sample-size", "20",
-        "--timeout", "10",
+        "--api-url",
+        "http://localhost:8000",
+        "--csv-path",
+        "data/future_unseen_examples.csv",
+        "--sample-size",
+        "20",
+        "--timeout",
+        "10",
         "--require-served-by",
     ]
     assert main() == 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
