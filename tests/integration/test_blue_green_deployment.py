@@ -21,11 +21,6 @@ MIN_RATIO = 0.90  # 90% of observed new hits should go to expected upstream
 # Wait a bit after nginx reload so workers settle
 RELOAD_SETTLE_SECONDS = 0.25
 
-# CI readiness / flake control
-BACKEND_READY_TIMEOUT_S = 90.0
-NGINX_READY_TIMEOUT_S = 60.0
-POLL_SLEEP_S = 0.5
-
 NGINX_SERVICE = "nginx"
 BLUE_SERVICE = "api_blue"
 GREEN_SERVICE = "api_green"
@@ -70,51 +65,6 @@ def get_ip(service: str) -> str:
     return out
 
 
-# -----------------------------
-# Readiness helpers (CI race fix)
-# -----------------------------
-def curl_url(url: str) -> Tuple[int, str]:
-    """
-    Returns (status_code, body). Never raises.
-    Uses small timeouts to avoid hanging CI.
-    """
-    out = run(
-        f'curl -sS --connect-timeout 1 --max-time 2 -w "\\n%{{http_code}}" "{url}"',
-        check=False,
-    )
-    if "\n" not in out:
-        return 0, out
-    body, code = out.rsplit("\n", 1)
-    try:
-        return int(code.strip()), body.strip()
-    except ValueError:
-        return 0, out
-
-
-def wait_for_200(url: str, timeout_s: float) -> None:
-    deadline = time.time() + timeout_s
-    last: Tuple[int, str] = (0, "")
-    while time.time() < deadline:
-        last = curl_url(url)
-        if last[0] == 200:
-            return
-        time.sleep(POLL_SLEEP_S)
-    raise AssertionError(f"Timed out waiting for 200 at {url}. Last={last[0]} body={last[1][:200]!r}")
-
-
-def wait_for_backend_ready(ip: str, timeout_s: float = BACKEND_READY_TIMEOUT_S) -> None:
-    # hit backend directly (no nginx), so we know the container is actually serving
-    wait_for_200(f"http://{ip}:8000{HEALTH_PATH}", timeout_s=timeout_s)
-
-
-def wait_for_nginx_ready(timeout_s: float = NGINX_READY_TIMEOUT_S) -> None:
-    # hit through nginx, so we know proxy is ready for traffic after reload/switch
-    wait_for_200(f"{BASE_URL}{HEALTH_PATH}", timeout_s=timeout_s)
-
-
-# -----------------------------
-# Nginx upstream switching
-# -----------------------------
 def nginx_reload() -> None:
     cid = get_container_id(NGINX_SERVICE)
     run(f'docker exec -t "{cid}" nginx -t >/dev/null')
@@ -137,7 +87,14 @@ def set_upstream(service: str) -> None:
 
 
 def curl_health() -> Tuple[int, str]:
-    return curl_url(f"{BASE_URL}{HEALTH_PATH}")
+    out = run(f'curl -s -w "\\n%{{http_code}}" "{BASE_URL}{HEALTH_PATH}"', check=False)
+    if "\n" not in out:
+        return 0, out
+    body, code = out.rsplit("\n", 1)
+    try:
+        return int(code.strip()), body.strip()
+    except ValueError:
+        return 0, out
 
 
 def hit(n: int) -> None:
@@ -208,8 +165,6 @@ def assert_most_traffic(expected_service: str, phase_lines: List[str], min_ratio
 
 
 def smoke_ok() -> None:
-    # ✅ CI-safe: after reload/switch, wait until nginx returns 200 (avoids flaky 502)
-    wait_for_nginx_ready(timeout_s=NGINX_READY_TIMEOUT_S)
     code, body = curl_health()
     assert code == 200, f"Health failed: {code} body={body}"
 
@@ -224,10 +179,6 @@ def test_blue_green_deployment_e2e():
     blue_ip = get_ip(BLUE_SERVICE)
     green_ip = get_ip(GREEN_SERVICE)
     print(f"\nIP mapping: {BLUE_SERVICE}={blue_ip} | {GREEN_SERVICE}={green_ip}")
-
-    # ✅ Wait for both backends to be ready directly (no nginx)
-    wait_for_backend_ready(blue_ip, timeout_s=BACKEND_READY_TIMEOUT_S)
-    wait_for_backend_ready(green_ip, timeout_s=BACKEND_READY_TIMEOUT_S)
 
     # -------------------------
     # Phase 1: Route to BLUE
@@ -252,11 +203,9 @@ def test_blue_green_deployment_e2e():
     # Phase 2: Recreate GREEN only
     # -------------------------
     recreate_green()
+    time.sleep(1)
 
-    # ✅ Wait for recreated green to be actually ready (its IP may change)
-    time.sleep(0.5)
     green_ip = get_ip(GREEN_SERVICE)
-    wait_for_backend_ready(green_ip, timeout_s=BACKEND_READY_TIMEOUT_S)
 
     print("\n--- compose ps after green recreate ---")
     print(compose("ps", check=False))
