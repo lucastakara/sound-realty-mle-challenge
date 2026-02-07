@@ -1,0 +1,57 @@
+# .github/workflows/cml-model-eval.yml
+name: Model Eval (CML PR comment)
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  eval-and-comment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+
+      - name: Set up CML
+        uses: iterative/setup-cml@v2
+
+      - name: Run evaluation (create_model.py) + comment on PR
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Runs your base-model evaluation script (prints metrics to logs)
+          python app/ml/create_model.py | tee metrics.txt
+
+          # PR comment body
+          {
+            echo "# Baseline model evaluation"
+            echo
+            echo "Commit: \`${GITHUB_SHA::7}\`"
+            echo
+            echo "## Metrics"
+            echo '```'
+            cat metrics.txt
+            echo '```'
+          } > report.md
+
+          # Post PR comment
+          cml comment create report.md
