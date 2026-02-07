@@ -41,6 +41,7 @@ def main() -> None:
     kf = model_selection.KFold(n_splits=k, shuffle=True, random_state=42)
 
     mae_model_folds: list[float] = []
+    mse_model_folds: list[float] = []
     r2_model_folds: list[float] = []
 
     for fold_idx, (train_idx, val_idx) in enumerate(kf.split(x), start=1):
@@ -56,27 +57,34 @@ def main() -> None:
         y_pred = model.predict(x_val)
 
         mae_model = metrics.mean_absolute_error(y_val, y_pred)
+        mse_model = metrics.mean_squared_error(y_val, y_pred)
         r2_model = metrics.r2_score(y_val, y_pred)
 
         mae_model_folds.append(mae_model)
+        mse_model_folds.append(mse_model)
         r2_model_folds.append(r2_model)
 
         # Per-fold output (optional)
         print(f"Fold {fold_idx}/{k}")
         print(f"  MAE model: {mae_model:.6f}")
+        print(f"  MSE model: {mse_model:.6f}")
         print(f"  R2  model: {r2_model:.6f}")
 
     # Aggregate: mean and std across folds (sample std ddof=1)
-    mae_model_mean = float(np.mean(mae_model_folds))
-    mae_model_std = float(np.std(mae_model_folds, ddof=1))
+    mae_mean = float(np.mean(mae_model_folds))
+    mae_std = float(np.std(mae_model_folds, ddof=1))
 
-    r2_model_mean = float(np.mean(r2_model_folds))
-    r2_model_std = float(np.std(r2_model_folds, ddof=1))
+    mse_mean = float(np.mean(mse_model_folds))
+    mse_std = float(np.std(mse_model_folds, ddof=1))
+
+    r2_mean = float(np.mean(r2_model_folds))
+    r2_std = float(np.std(r2_model_folds, ddof=1))
 
     print("\n" + "-" * 70)
     print(f"{k}-Fold Cross-Validation Summary (mean ± std over {k} folds)")
-    print(f"Mean Absolute Error (base model): {fmt(mae_model_mean, mae_model_std)}")
-    print(f"R-squared Score (base model):     {fmt(r2_model_mean, r2_model_std)}")
+    print(f"Mean Absolute Error (base model): {fmt(mae_mean, mae_std)}")
+    print(f"Mean Squared Error (base model):  {fmt(mse_mean, mse_std)}")
+    print(f"R-squared Score (base model):     {fmt(r2_mean, r2_std)}")
 
 
 if __name__ == "__main__":
