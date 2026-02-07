@@ -66,7 +66,7 @@ test:
 # Live run against BLUE/GREEN via NGINX
 # -------------------------
 live: up
-	@python tests/integration/run_live_unseen_examples.py \
+	@python tests/integration/test_run_live_unseen_examples.py \
 		--api-url http://localhost:8000 \
 		--csv-path data/future_unseen_examples.csv \
 		--sample-size 20 \
