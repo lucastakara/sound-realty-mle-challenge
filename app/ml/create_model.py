@@ -40,9 +40,9 @@ def main() -> None:
     k = 5
     kf = model_selection.KFold(n_splits=k, shuffle=True, random_state=42)
 
-    mae_model_folds: list[float] = []
-    mse_model_folds: list[float] = []
-    r2_model_folds: list[float] = []
+    mae_folds: list[float] = []
+    rmse_folds: list[float] = []
+    r2_folds: list[float] = []
 
     for fold_idx, (train_idx, val_idx) in enumerate(kf.split(x), start=1):
         x_train, x_val = x.iloc[train_idx], x.iloc[val_idx]
@@ -56,35 +56,38 @@ def main() -> None:
         model.fit(x_train, y_train)
         y_pred = model.predict(x_val)
 
-        mae_model = metrics.mean_absolute_error(y_val, y_pred)
-        mse_model = metrics.mean_squared_error(y_val, y_pred)
-        r2_model = metrics.r2_score(y_val, y_pred)
+        # MAE (Mean Absolute Error):
+        # "On average, how many dollars off are we?" (linear penalty, robust to outliers)
+        mae = metrics.mean_absolute_error(y_val, y_pred)
 
-        mae_model_folds.append(mae_model)
-        mse_model_folds.append(mse_model)
-        r2_model_folds.append(r2_model)
+        # RMSE (Root Mean Squared Error):
+        # Penalizes big misses more than MAE, but stays in "$" units.
+        rmse = metrics.mean_squared_error(y_val, y_pred, squared=False)
+
+        # R² (Coefficient of Determination):
+        # How much better than predicting the mean price? 1=perfect, 0=mean baseline, <0=worse than mean baseline.
+        r2 = metrics.r2_score(y_val, y_pred)
+
+        mae_folds.append(mae)
+        rmse_folds.append(float(rmse))
+        r2_folds.append(r2)
 
         # Per-fold output (optional)
         print(f"Fold {fold_idx}/{k}")
-        print(f"  MAE model: {mae_model:.6f}")
-        print(f"  MSE model: {mse_model:.6f}")
-        print(f"  R2  model: {r2_model:.6f}")
+        print(f"  MAE  (avg $ error):        {mae:.6f}")
+        print(f"  RMSE ($, big errors hurt): {rmse:.6f}")
+        print(f"  R2   (vs mean baseline):   {r2:.6f}")
 
     # Aggregate: mean and std across folds (sample std ddof=1)
-    mae_mean = float(np.mean(mae_model_folds))
-    mae_std = float(np.std(mae_model_folds, ddof=1))
-
-    mse_mean = float(np.mean(mse_model_folds))
-    mse_std = float(np.std(mse_model_folds, ddof=1))
-
-    r2_mean = float(np.mean(r2_model_folds))
-    r2_std = float(np.std(r2_model_folds, ddof=1))
+    mae_mean, mae_std = float(np.mean(mae_folds)), float(np.std(mae_folds, ddof=1))
+    rmse_mean, rmse_std = float(np.mean(rmse_folds)), float(np.std(rmse_folds, ddof=1))
+    r2_mean, r2_std = float(np.mean(r2_folds)), float(np.std(r2_folds, ddof=1))
 
     print("\n" + "-" * 70)
     print(f"{k}-Fold Cross-Validation Summary (mean ± std over {k} folds)")
-    print(f"Mean Absolute Error (base model): {fmt(mae_mean, mae_std)}")
-    print(f"Mean Squared Error (base model):  {fmt(mse_mean, mse_std)}")
-    print(f"R-squared Score (base model):     {fmt(r2_mean, r2_std)}")
+    print(f"MAE   (avg $ error):        {fmt(mae_mean, mae_std)}")
+    print(f"RMSE  ($, big errors hurt): {fmt(rmse_mean, rmse_std)}")
+    print(f"R2    (vs mean baseline):   {fmt(r2_mean, r2_std)}")
 
 
 if __name__ == "__main__":
