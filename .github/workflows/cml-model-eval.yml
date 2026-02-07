@@ -39,7 +39,7 @@ jobs:
           set -euo pipefail
 
           # Run eval: prints to Actions logs AND captures output for the PR comment
-          python app/ml/evaluate_base_model.py | tee metrics.txt
+          python app/ml/create_model.py | tee metrics.txt
 
           # Build a markdown report (the PR comment body)
           {
