@@ -62,7 +62,8 @@ def main() -> None:
 
         # RMSE (Root Mean Squared Error):
         # Penalizes big misses more than MAE, but stays in "$" units.
-        rmse = metrics.mean_squared_error(y_val, y_pred, squared=False)
+        mse = metrics.mean_squared_error(y_val, y_pred)
+        rmse = float(np.sqrt(mse))
 
         # R² (Coefficient of Determination):
         # How much better than predicting the mean price? 1=perfect, 0=mean baseline, <0=worse than mean baseline.
