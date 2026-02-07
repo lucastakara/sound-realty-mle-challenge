@@ -3,7 +3,6 @@ name: Model Eval (CML PR comment)
 
 on:
   pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
