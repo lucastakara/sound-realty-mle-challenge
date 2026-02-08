@@ -10,8 +10,8 @@ from sklearn import neighbors
 from sklearn import pipeline
 from sklearn import preprocessing
 
-SALES_PATH = "data/kc_house_data.csv"
-DEMOGRAPHICS_PATH = "data/zipcode_demographics.csv"
+SALES_PATH = "data/kc_house_data.csv"  # path to CSV with home sale data
+DEMOGRAPHICS_PATH = "data/kc_house_data.csv"  # path to CSV with demographics
 # List of columns (subset) that will be taken from home sale data
 SALES_COLUMN_SELECTION = [
     'price', 'bedrooms', 'bathrooms', 'sqft_living', 'sqft_lot', 'floors',
@@ -57,6 +57,8 @@ def main():
     x, y = load_data(SALES_PATH, DEMOGRAPHICS_PATH, SALES_COLUMN_SELECTION)
     x_train, _x_test, y_train, _y_test = model_selection.train_test_split(
         x, y, random_state=42)
+
+    print(x_train.columns)
 
     model = pipeline.make_pipeline(preprocessing.RobustScaler(),
                                    neighbors.KNeighborsRegressor()).fit(

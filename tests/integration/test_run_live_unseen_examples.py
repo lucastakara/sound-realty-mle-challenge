@@ -117,6 +117,8 @@ def load_samples(csv_path: Path, sample_size: int) -> List[Dict[str, Any]]:
     sample_size = min(sample_size, len(df))
     df_sample = df.sample(sample_size, random_state=42)
 
+    print(df_sample.columns)
+
     records: List[Dict[str, Any]] = []
     for row in df_sample.to_dict(orient="records"):
         clean = {k: (None if pd.isna(v) else v) for k, v in row.items()}

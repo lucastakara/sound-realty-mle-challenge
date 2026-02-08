@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict, Field
-
 
 class PredictionRequestFull(BaseModel):
     bedrooms: int = Field(..., ge=0)
@@ -24,6 +21,21 @@ class PredictionRequestFull(BaseModel):
     sqft_lot15: int = Field(..., ge=0)
 
 
+class PredictionResponse(BaseModel):
+    prediction: float
+    
+    request_id: str
+    
+    latency_ms: float = Field(..., ge=0)
+
+
+    model_version: str
+    served_by: str
+
+    model_artifact_path: str
+    features_artifact_path: str
+
+
 class PredictionRequestMinimal(BaseModel):
     bedrooms: int = Field(..., ge=0)
     bathrooms: float = Field(..., ge=0)
@@ -35,18 +47,3 @@ class PredictionRequestMinimal(BaseModel):
     zipcode: str
 
 
-class PredictionResponse(BaseModel):
-    # avoid pydantic warning for "model_*"
-    model_config = ConfigDict(protected_namespaces=())
-
-    prediction: float
-    request_id: str
-    latency_ms: float = Field(..., ge=0)
-
-
-    model_version: str
-    served_by: str
-
-    # optional “useful metadata”
-    model_artifact_path: str
-    features_artifact_path: str
