@@ -141,7 +141,7 @@ conda env create -f conda_environment.yml
 conda activate housing
 ```
 
-## Run locally (Docker Compose Blue/Green)
+## Run locally (Docker Compose Blue/Green) on terminal
 
 Bring up the full stack (Nginx + Blue + Green):
 
