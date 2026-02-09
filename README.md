@@ -82,19 +82,19 @@ Evaluation and metrics reporting are surfaced via:
 [x] **Deploy model as REST endpoint receiving JSON POST data**  
 - Implemented by `POST /predict` and `POST /predict_minimal` (app/api/routes.py)
 
-[x] **Inputs must match `future_unseen_examples.csv` for `POST /predict` and exclude demographics**  
+- [x] **Inputs must match `future_unseen_examples.csv` for `POST /predict` and exclude demographics**  
 - `/predict` matches the CSV schema (property attributes only)  
 - Demographics are merged on the backend using zipcode
 
-[x] **Design for scaling and safe model updates**  
+- [x] **Design for scaling and safe model updates**  
 - Local demo implements **Blue/Green** with **Nginx** switching upstreams  
 - This demonstrates a **zero-downtime promotion + instant rollback** pattern
 - Script Path: `tests/integration/tests/blue_green_deployment.py`
 
-[x] **Bonus: Minimal endpoint with only required features**  
+- [x] **Bonus: Minimal endpoint with only required features**  
 - Implemented by `POST /predict_minimal`
 
-[x] **Test script that submits examples from `future_unseen_examples.csv`**  
+- [x] **Test script that submits examples from `future_unseen_examples.csv`**  
 - Implemented as a pytest-style live integration test + `make live` convenience target (see below)
 - Script Path: `tests/integration/tests/test_run_live_unseen_examples.py`
 ---
@@ -178,4 +178,5 @@ Run the Blue/Green end-to-end integration test:
 ```bash
 make bluegreen
 ```
+
 
