@@ -79,7 +79,7 @@ Evaluation and metrics reporting are surfaced via:
 
 ## Challenge requirements coverage
 
-[x] **Deploy model as REST endpoint receiving JSON POST data**  
+- [x] **Deploy model as REST endpoint receiving JSON POST data**  
 - Implemented by `POST /predict` and `POST /predict_minimal` (app/api/routes.py)
 
 - [x] **Inputs must match `future_unseen_examples.csv` for `POST /predict` and exclude demographics**  
@@ -178,5 +178,6 @@ Run the Blue/Green end-to-end integration test:
 ```bash
 make bluegreen
 ```
+
 
 
