@@ -2,7 +2,8 @@ import json
 import re
 import subprocess
 import time
-from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
 
 # -----------------------------
 # Config
@@ -12,13 +13,8 @@ COMPOSE_FILE = "deploy/docker-compose.bluegreen.yml"
 BASE_URL = "http://localhost:8000"
 HEALTH_PATH = "/health"
 
-# How many hits we generate per phase
 N_HITS = 20
-
-# How strict the routing assertion is
-MIN_RATIO = 0.90  # 90% of observed new hits should go to expected upstream
-
-# Wait a bit after nginx reload so workers settle
+MIN_RATIO = 0.90
 RELOAD_SETTLE_SECONDS = 0.25
 
 NGINX_SERVICE = "nginx"
@@ -26,8 +22,13 @@ BLUE_SERVICE = "api_blue"
 GREEN_SERVICE = "api_green"
 UPSTREAM_CONF = "deploy/nginx/conf.d/upstream.conf"
 
-# Docker container IDs are hex; compose can print warnings into stdout.
 CID_RE = re.compile(r"\b[a-f0-9]{12,64}\b")
+
+
+@dataclass(frozen=True)
+class CurlResult:
+    status_code: int
+    body: str
 
 
 # -----------------------------
@@ -45,6 +46,9 @@ def compose(cmd: str, check: bool = True) -> str:
     return run(f'docker compose -f "{COMPOSE_FILE}" {cmd}', check=check)
 
 
+# -----------------------------
+# Docker helpers
+# -----------------------------
 def get_container_id(service: str) -> str:
     out = compose(f"ps -q {service}", check=False).strip()
     m = CID_RE.search(out)
@@ -58,22 +62,26 @@ def get_container_id(service: str) -> str:
 def get_ip(service: str) -> str:
     cid = get_container_id(service)
     out = run(
-        f'docker inspect -f \'{{{{range .NetworkSettings.Networks}}}}{{{{.IPAddress}}}}{{{{end}}}}\' "{cid}"'
+        "docker inspect -f "
+        f"'{{{{range .NetworkSettings.Networks}}}}{{{{.IPAddress}}}}{{{{end}}}}' "
+        f'"{cid}"'
     ).strip()
     if not out:
         raise RuntimeError(f"Could not get IP for {service}")
     return out
 
 
+# -----------------------------
+# Nginx helpers
+# -----------------------------
 def nginx_reload() -> None:
     cid = get_container_id(NGINX_SERVICE)
     run(f'docker exec -t "{cid}" nginx -t >/dev/null')
     run(f'docker exec -t "{cid}" nginx -s reload >/dev/null')
-    # let workers settle so the very next request doesn't race the reload
     time.sleep(RELOAD_SETTLE_SECONDS)
 
 
-def set_upstream(service: str) -> None:
+def write_upstream_conf(service: str) -> None:
     conf = f"upstream api_upstream {{ server {service}:8000; }}\n"
     run('mkdir -p "$(dirname \\"' + UPSTREAM_CONF + '\\")"')
     run(
@@ -83,26 +91,74 @@ def set_upstream(service: str) -> None:
         f"print('Wrote {UPSTREAM_CONF} -> {service}')\n"
         "PY"
     )
+
+
+def set_upstream(service: str) -> None:
+    write_upstream_conf(service)
     nginx_reload()
 
 
-def curl_health() -> Tuple[int, str]:
-    out = run(f'curl -s -w "\\n%{{http_code}}" "{BASE_URL}{HEALTH_PATH}"', check=False)
+# -----------------------------
+# HTTP helpers
+# -----------------------------
+def curl_health() -> CurlResult:
+    """
+    Use short connect + total timeouts so tests never hang.
+    Returns (status_code, body). If parsing fails, returns status_code=0.
+    """
+    out = run(
+        f'curl -s --connect-timeout 1 --max-time 2 -w "\\n%{{http_code}}" "{BASE_URL}{HEALTH_PATH}"',
+        check=False,
+    )
     if "\n" not in out:
-        return 0, out
+        return CurlResult(status_code=0, body=out)
+
     body, code = out.rsplit("\n", 1)
     try:
-        return int(code.strip()), body.strip()
+        return CurlResult(status_code=int(code.strip()), body=body.strip())
     except ValueError:
-        return 0, out
+        return CurlResult(status_code=0, body=out)
+
+
+def wait_for_health_ok(timeout_s: float = 30.0, sleep_s: float = 0.25) -> None:
+    """
+    NGINX can return transient 502/000 immediately after upstream switch or container recreate.
+    Wait until /health returns 200, or fail after timeout.
+    """
+    deadline = time.time() + timeout_s
+    last: Optional[CurlResult] = None
+
+    while time.time() < deadline:
+        res = curl_health()
+        last = res
+        if res.status_code == 200:
+            return
+        time.sleep(sleep_s)
+
+    last = last or CurlResult(status_code=0, body="")
+    raise AssertionError(
+        f"Health never became 200 within {timeout_s}s. Last: {last.status_code} body={last.body}"
+    )
 
 
 def hit(n: int) -> None:
-    run(f'for i in $(seq 1 {n}); do curl -s "{BASE_URL}{HEALTH_PATH}" >/dev/null; done')
+    run(
+        f'for i in $(seq 1 {n}); do '
+        f'curl -s --connect-timeout 1 --max-time 2 "{BASE_URL}{HEALTH_PATH}" >/dev/null; '
+        f"done",
+        check=False,
+    )
 
 
+def smoke_ok() -> None:
+    # Robust against transient 502 right after upstream switch/reload.
+    wait_for_health_ok(timeout_s=30.0, sleep_s=0.25)
+
+
+# -----------------------------
+# Stack lifecycle
+# -----------------------------
 def recreate_green() -> None:
-    # build may print 'No services to build' if compose uses only image:
     compose(f"build {GREEN_SERVICE}", check=False)
     compose(f"up -d --no-deps --force-recreate {GREEN_SERVICE}")
 
@@ -116,7 +172,7 @@ def nginx_log_lines(tail: int = 5000) -> List[str]:
 
 
 def label_upstreams(lines: List[str], blue_ip: str, green_ip: str) -> List[str]:
-    out = []
+    out: List[str] = []
     for ln in lines:
         ln = ln.replace(f"upstream={blue_ip}:8000", f"upstream={BLUE_SERVICE}:8000")
         ln = ln.replace(f"upstream={green_ip}:8000", f"upstream={GREEN_SERVICE}:8000")
@@ -128,7 +184,6 @@ def new_health_lines_since(baseline_len: int, blue_ip: str, green_ip: str) -> Li
     after = nginx_log_lines()
     new_lines = after[baseline_len:] if baseline_len <= len(after) else after
     new_lines = label_upstreams(new_lines, blue_ip=blue_ip, green_ip=green_ip)
-    # Only consider *our* relevant lines
     return [ln for ln in new_lines if "GET /health" in ln and " upstream=" in ln]
 
 
@@ -164,9 +219,14 @@ def assert_most_traffic(expected_service: str, phase_lines: List[str], min_ratio
     print(f"\nUpstream counts OK (this phase): {counts} (expected mostly {expected_service})")
 
 
-def smoke_ok() -> None:
-    code, body = curl_health()
-    assert code == 200, f"Health failed: {code} body={body}"
+def warmup_and_baseline() -> int:
+    """
+    Make a single request to ensure NGINX workers are using the new upstream,
+    then set the baseline AFTER that warmup so our counts only include the hit() calls.
+    """
+    baseline = len(nginx_log_lines())
+    run(f'curl -s --connect-timeout 1 --max-time 2 "{BASE_URL}{HEALTH_PATH}" >/dev/null', check=False)
+    return len(nginx_log_lines())
 
 
 # -----------------------------
@@ -186,11 +246,7 @@ def test_blue_green_deployment_e2e():
     set_upstream(BLUE_SERVICE)
     smoke_ok()
 
-    # Warm-up request AFTER switching (ignored in counts)
-    baseline = len(nginx_log_lines())
-    run(f'curl -s "{BASE_URL}{HEALTH_PATH}" >/dev/null', check=False)
-    baseline = len(nginx_log_lines())  # baseline after warm-up
-
+    baseline = warmup_and_baseline()
     hit(N_HITS)
 
     phase1 = new_health_lines_since(baseline, blue_ip=blue_ip, green_ip=green_ip)
@@ -203,7 +259,9 @@ def test_blue_green_deployment_e2e():
     # Phase 2: Recreate GREEN only
     # -------------------------
     recreate_green()
-    time.sleep(1)
+
+    # Wait for the stack to stabilize (green recreate can briefly break upstream health)
+    smoke_ok()
 
     green_ip = get_ip(GREEN_SERVICE)
 
@@ -216,11 +274,7 @@ def test_blue_green_deployment_e2e():
     set_upstream(GREEN_SERVICE)
     smoke_ok()
 
-    # Warm-up request AFTER switching (ignored in counts)
-    baseline = len(nginx_log_lines())
-    run(f'curl -s "{BASE_URL}{HEALTH_PATH}" >/dev/null', check=False)
-    baseline = len(nginx_log_lines())
-
+    baseline = warmup_and_baseline()
     hit(N_HITS)
 
     phase3 = new_health_lines_since(baseline, blue_ip=blue_ip, green_ip=green_ip)
